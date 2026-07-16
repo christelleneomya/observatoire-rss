@@ -40,7 +40,7 @@
 
     <!-- Main Content -->
     <main class="flex-grow max-w-6xl w-full mx-auto px-6 py-12">
-        
+
         <!-- Hero Section - Aligné sur toute la largeur -->
         <div class="w-full mb-12">
             <div class="inline-flex items-center space-x-2 bg-emerald-50 text-emerald-800 text-xs px-3 py-1.5 rounded-full font-medium mb-6">
@@ -134,7 +134,7 @@
             <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900 mb-8 tracking-tight">
                 Accélérez la transformation opérationnelle de vos établissements
             </h2>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
                 <!-- Cible 1 : Directeur de Résidence -->
                 <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex flex-col justify-between text-left">
@@ -190,7 +190,7 @@
             try {
                 const response = await fetch(csvUrl);
                 const csvText = await response.text();
-                
+
                 Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
@@ -221,7 +221,7 @@
             const totalRespondents = data.length;
 
             // --- CALCULS ET KPI ---
-            
+
             // 1. Dispersion Outils
             let totalTools = 0;
             let countTools = 0;
@@ -254,7 +254,7 @@
             data.forEach(row => {
                 const valStr = (row[colHours] || "").toLowerCase();
                 let hours = 0;
-                
+
                 if (valStr.includes("moins d'une heure") || valStr.includes("moins de 1h")) {
                     hours = 0.5;
                 } else if (valStr.includes("1h") || valStr.includes("entre 1h et 2h")) {
@@ -264,7 +264,7 @@
                 } else if (valStr.includes("plus de 3h") || valStr.includes("plus de 3 heures")) {
                     hours = 3.5;
                 }
-                
+
                 if (hours > 0) {
                     totalHoursDaily += hours;
                     countHours++;
@@ -274,7 +274,6 @@
             const monthlyCost = Math.round(avgHours * 22 * 35); // 22 jours ouvrés par mois à 35€ de l'heure
             document.getElementById("kpi-cost").innerText = monthlyCost > 0 ? `${monthlyCost.toLocaleString('fr-FR')} €` : "-- €";
 
-
             // --- GRAPHIC 1 : TEMPS PASSÉ (Trié et en %) ---
             const chronologicalLabels = [
                 "Moins d'une heure",
@@ -282,7 +281,7 @@
                 "Entre 2h et 3h",
                 "Plus de 3h par jour"
             ];
-            
+
             const hoursMap = {
                 "Moins d'une heure": 0,
                 "Entre 1h et 2h": 0,
@@ -332,7 +331,6 @@
                 }
             });
 
-
             // --- GRAPHIC 2 : POINTS DE DOULEUR (Multi-choix en % des répondants) ---
             const cleanPainsLabels = {
                 "La saisie d'informations d'un logiciel à un autre": "Saisie d'un outil à l'autre",
@@ -349,46 +347,66 @@
                 "Autre": 0
             };
 
+            // Normalise pour éviter les bugs de parsing (virgules dans parenthèses, espaces, casse…)
+            function normalizePainText(s) {
+                if (!s) return "";
+                return s
+                    .replace(/\([^)]*\)/g, " ")   // supprime "( ... )"
+                    .replace(/\s+/g, " ")
+                    .trim()
+                    .toLowerCase();
+            }
+
             data.forEach(row => {
-                const val = row[colPains];
-                if (val) {
-                    const separators = [';', ','];
-                    let items = [val];
-                    
-                    separators.forEach(sep => {
-                        let newItems = [];
-                        items.forEach(it => {
-                            newItems = newItems.concat(it.split(sep));
-                        });
-                        items = newItems;
-                    });
+                const valRaw = row[colPains];
+                const val = normalizePainText(valRaw);
 
-                    const uniqueSelectionsInRow = new Set();
-                    items.forEach(item => {
-                        const cleaned = item.trim();
-                        if (cleaned) {
-                            let matched = false;
-                            for (const [key, cleanName] of Object.entries(cleanPainsLabels)) {
-                                if (cleaned.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleaned.toLowerCase())) {
-                                    uniqueSelectionsInRow.add(cleanName);
-                                    matched = true;
-                                    break;
-                                }
-                            }
-                            if (!matched && cleaned.length > 0) {
-                                uniqueSelectionsInRow.add("Autre");
-                            }
+                if (!val) return;
+
+                // découpage multi-choix : d'abord ';', puis ','
+                const separators = [';', ','];
+                let items = [val];
+
+                separators.forEach(sep => {
+                    const next = [];
+                    items.forEach(it => next.push(...it.split(sep)));
+                    items = next;
+                });
+
+                const uniqueSelectionsInRow = new Set();
+
+                items.forEach(item => {
+                    const cleaned = normalizePainText(item);
+                    if (!cleaned) return; // garde-fou anti "Autre" artificiel
+
+                    let matched = false;
+
+                    for (const [key, cleanName] of Object.entries(cleanPainsLabels)) {
+                        const keyNorm = normalizePainText(key);
+
+                        // matching permissif
+                        if (cleaned.includes(keyNorm) || keyNorm.includes(cleaned)) {
+                            uniqueSelectionsInRow.add(cleanName);
+                            matched = true;
+                            break;
                         }
-                    });
+                    }
 
-                    uniqueSelectionsInRow.forEach(pain => {
-                        painsMap[pain]++;
-                    });
-                }
+                    if (!matched) {
+                        uniqueSelectionsInRow.add("Autre");
+                    }
+                });
+
+                uniqueSelectionsInRow.forEach(pain => {
+                    painsMap[pain]++;
+                });
             });
 
             const sortedPains = Object.entries(painsMap)
-                .map(([name, count]) => [name, totalRespondents > 0 ? Math.round((count / totalRespondents) * 100) : 0])
+                .map(([name, count]) => [
+                    name,
+                    totalRespondents > 0 ? Math.round((count / totalRespondents) * 100) : 0
+                ])
                 .sort((a,b) => b[1] - a[1]);
 
             new Chart(document.getElementById("chart-pains"), {
@@ -430,7 +448,6 @@
                     }
                 }
             });
-
 
             // --- GRAPHIC 3 : IMPACT RÉSIDENT (1 À 5) ---
             const impactMap = { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 };
